@@ -1,0 +1,14 @@
+*.ts
+!dist/**/*.js
+!dist/**/*.d.ts
+!dist/**/*.svg
+tsconfig.json
+.gitignore
+node_modules
+config/
+credentials/
+nodes/
+.env
+.env.example
+CUSTOMIZATION.md
+SECURITY_IMPROVEMENTS.md
