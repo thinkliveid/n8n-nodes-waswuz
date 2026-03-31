@@ -24,13 +24,14 @@
     "type": "git",
     "url": "https://github.com/thinkliveid/n8n-nodes-waswuz.git"
   },
-  "main": "dist/nodes/ChatPlatform/WaswuzPlatform.node.js",
+  "main": "dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js",
   "scripts": {
     "build": "tsc && npm run copy-icons",
-    "copy-icons": "node -e \"require('fs').cpSync('nodes/WaswuzPlatform/icon.svg', 'dist/nodes/WaswuzPlatform/icon.svg')\"",
+    "copy-icons": "node -e \"const fs=require('fs'); fs.cpSync('nodes/WaswuzPlatform/icon.svg', 'dist/nodes/WaswuzPlatform/icon.svg'); fs.cpSync('nodes/WaswuzWebhook/icon.svg', 'dist/nodes/WaswuzWebhook/icon.svg');\"",
     "dev": "tsc --watch",
     "format": "prettier nodes credentials config --write",
     "lint": "eslint nodes credentials config package.json",
+    "test": "npm run build && node --test test/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "files": [
@@ -42,7 +43,8 @@
       "dist/credentials/WaswuzPlatformApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js"
+      "dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js",
+      "dist/nodes/WaswuzWebhook/WaswuzWebhook.node.js"
     ]
   },
   "devDependencies": {
