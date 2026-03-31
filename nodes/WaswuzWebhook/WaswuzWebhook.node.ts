@@ -7,6 +7,7 @@ import {
 	IWebhookResponseData,
 	NodeOperationError,
 } from 'n8n-workflow';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { brandConfig } from '../../config/brand.config';
 
 const authenticationOptions: INodePropertyOptions[] = [
@@ -20,6 +21,11 @@ const authenticationOptions: INodePropertyOptions[] = [
 		value: 'headerSecret',
 		description: 'Require a shared secret in a request header',
 	},
+	{
+		name: 'HMAC Signature',
+		value: 'hmacSignature',
+		description: 'Validate an HMAC signature header using the credential webhook key',
+	},
 ];
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
@@ -28,6 +34,37 @@ function normalizeHeaderValue(value: string | string[] | undefined): string | un
 	}
 
 	return value;
+}
+
+function getRawRequestBody(request: { rawBody?: unknown; body?: unknown }, body: IDataObject): Buffer {
+	if (Buffer.isBuffer(request.rawBody)) {
+		return request.rawBody;
+	}
+
+	if (typeof request.rawBody === 'string') {
+		return Buffer.from(request.rawBody, 'utf8');
+	}
+
+	if (Buffer.isBuffer(request.body)) {
+		return request.body;
+	}
+
+	if (typeof request.body === 'string') {
+		return Buffer.from(request.body, 'utf8');
+	}
+
+	return Buffer.from(JSON.stringify(body ?? {}), 'utf8');
+}
+
+function signaturesMatch(expected: string, incoming: string): boolean {
+	const expectedBuffer = Buffer.from(expected, 'utf8');
+	const incomingBuffer = Buffer.from(incoming, 'utf8');
+
+	if (expectedBuffer.length !== incomingBuffer.length) {
+		return false;
+	}
+
+	return timingSafeEqual(expectedBuffer, incomingBuffer);
 }
 
 function getValueByPath(data: unknown, path: string): unknown {
@@ -171,6 +208,31 @@ export class WaswuzWebhook implements INodeType {
 				description: 'The shared secret that must match the incoming header value',
 			},
 			{
+				displayName: 'Signature Header Name',
+				name: 'signatureHeaderName',
+				type: 'string',
+				default: 'x-waswuz-signature',
+				required: true,
+				displayOptions: {
+					show: {
+						authentication: ['hmacSignature'],
+					},
+				},
+				description: 'The request header that carries the HMAC signature',
+			},
+			{
+				displayName: 'Signature Prefix',
+				name: 'signaturePrefix',
+				type: 'string',
+				default: 'sha256=',
+				displayOptions: {
+					show: {
+						authentication: ['hmacSignature'],
+					},
+				},
+				description: 'Optional prefix expected before the hex digest in the signature header',
+			},
+			{
 				displayName: 'Auto Send Typing',
 				name: 'autoSendTyping',
 				type: 'boolean',
@@ -299,6 +361,7 @@ export class WaswuzWebhook implements INodeType {
 		const authentication = this.getNodeParameter('authentication') as string;
 		const headers = this.getHeaderData();
 		const body = this.getBodyData();
+		const request = this.getRequestObject();
 
 		if (authentication === 'headerSecret') {
 			const secretHeaderName = (this.getNodeParameter('secretHeaderName') as string).toLowerCase();
@@ -308,6 +371,38 @@ export class WaswuzWebhook implements INodeType {
 			if (!incomingSecret || incomingSecret !== secretValue) {
 				throw new NodeOperationError(this.getNode(), 'Webhook secret validation failed', {
 					description: `The "${secretHeaderName}" header did not match the configured secret.`,
+				});
+			}
+		}
+
+		if (authentication === 'hmacSignature') {
+			const signatureHeaderName = (
+				this.getNodeParameter('signatureHeaderName') as string
+			).toLowerCase();
+			const signaturePrefix = this.getNodeParameter('signaturePrefix') as string;
+			const incomingSignature = normalizeHeaderValue(headers[signatureHeaderName]);
+			const credentials = await this.getCredentials(brandConfig.credentialId);
+			const webhookKey = credentials.webhookKey as string | undefined;
+
+			if (!webhookKey) {
+				throw new NodeOperationError(this.getNode(), 'Webhook key is not configured', {
+					description: `Set the "Webhook Key" field in the "${brandConfig.displayName} API" credential before enabling HMAC signature validation.`,
+				});
+			}
+
+			if (!incomingSignature) {
+				throw new NodeOperationError(this.getNode(), 'Webhook signature validation failed', {
+					description: `The "${signatureHeaderName}" header is missing.`,
+				});
+			}
+
+			const rawBody = getRawRequestBody(request, body);
+			const expectedDigest = createHmac('sha256', webhookKey).update(rawBody).digest('hex');
+			const expectedSignature = `${signaturePrefix}${expectedDigest}`;
+
+			if (!signaturesMatch(expectedSignature, incomingSignature)) {
+				throw new NodeOperationError(this.getNode(), 'Webhook signature validation failed', {
+					description: `The "${signatureHeaderName}" header did not match the computed HMAC-SHA256 signature.`,
 				});
 			}
 		}
@@ -373,7 +468,6 @@ export class WaswuzWebhook implements INodeType {
 			});
 		}
 
-		const request = this.getRequestObject();
 		const responseBody = this.getNodeParameter('responseBody') as string;
 		const payload: IDataObject = {
 			body,
