@@ -22,6 +22,15 @@ export class WaswuzPlatformApi implements ICredentialType {
 			placeholder: brandConfig.apiKeyPlaceholder,
 		},
 		{
+			displayName: 'Webhook Key',
+			name: 'webhookKey',
+			type: 'string',
+			typeOptions: { password: true },
+			default: '',
+			required: false,
+			description: 'Secret key used to generate or validate webhook HMAC signatures from request headers.',
+		},
+		{
 			displayName: 'API Base URL',
 			name: 'baseUrl',
 			type: 'string',

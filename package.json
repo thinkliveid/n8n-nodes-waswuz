@@ -1,6 +1,6 @@
 {
   "name": "@thinkliveid/n8n-nodes-waswuz",
-  "version": "1.1.3",
+  "version": "1.1.5",
   "description": "n8n community node for Waswuz - Send WhatsApp, Instagram & Messenger messages with interactive buttons, flexible customer lookup, and typing indicators",
   "keywords": [
     "n8n-community-node-package",

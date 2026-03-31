@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createHmac } = require('node:crypto');
 
 const { getBrandConfig } = require('../dist/config/brand.config.js');
 const { brandConfig } = require('../dist/config/brand.config.js');
@@ -102,6 +103,12 @@ function createWebhookContext({
 	options = {},
 } = {}) {
 	const requests = [];
+	const credentials = {
+		apiKey: 'wws_live_test_key',
+		baseUrl: 'https://api.example.test',
+		webhookKey: 'whk_test_secret',
+		...(options.credentials || {}),
+	};
 
 	return {
 		requests,
@@ -135,10 +142,7 @@ function createWebhookContext({
 		},
 		async getCredentials(name) {
 			assert.equal(name, brandConfig.credentialId);
-			return {
-				apiKey: 'wws_live_test_key',
-				baseUrl: 'https://api.example.test',
-			};
+			return credentials;
 		},
 		helpers: {
 			async httpRequestWithAuthentication(credentialName, requestConfig) {
@@ -231,7 +235,8 @@ test('credential exposes bearer auth and health test', () => {
 	);
 	assert.equal(credential.test.request.baseURL, '={{$credentials.baseUrl}}');
 	assert.equal(credential.test.request.url, '/health');
-	assert.equal(credential.properties.length, 2);
+	assert.equal(credential.properties.length, 3);
+	assert.equal(credential.properties[1].name, 'webhookKey');
 });
 
 test('node description exposes expected operations', () => {
@@ -750,4 +755,55 @@ test('webhook rejects requests with an invalid shared secret', async () => {
 	});
 
 	await assert.rejects(() => node.webhook.call(context), /Webhook secret validation failed/);
+});
+
+test('webhook validates hmac signature header using credential webhook key', async () => {
+	const node = new WaswuzWebhook();
+	const rawBody = JSON.stringify({ event: 'message.received', id: 'evt_123' });
+	const signature = `sha256=${createHmac('sha256', 'whk_test_secret')
+		.update(rawBody)
+		.digest('hex')}`;
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'hmacSignature',
+			signatureHeaderName: 'x-waswuz-signature',
+			signaturePrefix: 'sha256=',
+			autoSendTyping: false,
+			responseBody: 'ok',
+		},
+		body: { event: 'message.received', id: 'evt_123' },
+		headers: {
+			'x-waswuz-signature': signature,
+		},
+		request: {
+			rawBody,
+		},
+	});
+
+	const result = await node.webhook.call(context);
+
+	assert.equal(result.webhookResponse, 'ok');
+	assert.equal(result.workflowData[0][0].json.body.id, 'evt_123');
+});
+
+test('webhook rejects requests with an invalid hmac signature', async () => {
+	const node = new WaswuzWebhook();
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'hmacSignature',
+			signatureHeaderName: 'x-waswuz-signature',
+			signaturePrefix: 'sha256=',
+			autoSendTyping: false,
+			responseBody: 'ok',
+		},
+		body: { event: 'message.received', id: 'evt_123' },
+		headers: {
+			'x-waswuz-signature': 'sha256=invalid',
+		},
+		request: {
+			rawBody: JSON.stringify({ event: 'message.received', id: 'evt_123' }),
+		},
+	});
+
+	await assert.rejects(() => node.webhook.call(context), /Webhook signature validation failed/);
 });
