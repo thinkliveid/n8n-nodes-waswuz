@@ -1,6 +1,6 @@
 {
   "name": "@thinkliveid/n8n-nodes-waswuz",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "n8n community node for Waswuz - Send WhatsApp, Instagram & Messenger messages with interactive buttons, flexible customer lookup, and typing indicators",
   "keywords": [
     "n8n-community-node-package",
@@ -51,12 +51,10 @@
     "eslint": "^8.0.0",
     "n8n-workflow": "^1.0.0",
     "prettier": "^3.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "@types/node": "^25.5.0"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
-  },
-  "dependencies": {
-    "@types/node": "^25.5.0"
   }
 }
