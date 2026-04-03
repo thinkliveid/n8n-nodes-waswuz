@@ -4,7 +4,9 @@ const { createHmac } = require('node:crypto');
 
 const { getBrandConfig } = require('../dist/config/brand.config.js');
 const { brandConfig } = require('../dist/config/brand.config.js');
+const { OpenClawWebhookAuth } = require('../dist/credentials/OpenClawWebhookAuth.credentials.js');
 const { WaswuzPlatformApi } = require('../dist/credentials/WaswuzPlatformApi.credentials.js');
+const { OpenClawWebhook } = require('../dist/nodes/OpenClawWebhook/OpenClawWebhook.node.js');
 const { WaswuzPlatform } = require('../dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js');
 const { WaswuzWebhook } = require('../dist/nodes/WaswuzWebhook/WaswuzWebhook.node.js');
 
@@ -109,6 +111,11 @@ function createWebhookContext({
 		webhookKey: 'whk_test_secret',
 		...(options.credentials || {}),
 	};
+	const openClawCredentials = {
+		secretHeaderName: 'x-openclaw-secret',
+		secretValue: 'expected',
+		...(options.openClawCredentials || {}),
+	};
 
 	return {
 		requests,
@@ -141,8 +148,13 @@ function createWebhookContext({
 			return { name: 'WaswuzWebhook' };
 		},
 		async getCredentials(name) {
-			assert.equal(name, brandConfig.credentialId);
-			return credentials;
+			if (name === brandConfig.credentialId) {
+				return credentials;
+			}
+			if (name === 'openClawWebhookAuth') {
+				return openClawCredentials;
+			}
+			throw new Error(`Unexpected credential: ${name}`);
 		},
 		helpers: {
 			async httpRequestWithAuthentication(credentialName, requestConfig) {
@@ -239,6 +251,15 @@ test('credential exposes bearer auth and health test', () => {
 	assert.equal(credential.properties[1].name, 'webhookKey');
 });
 
+test('openclaw webhook credential exposes shared secret fields', () => {
+	const credential = new OpenClawWebhookAuth();
+
+	assert.equal(credential.name, 'openClawWebhookAuth');
+	assert.equal(credential.displayName, 'OpenClaw Webhook Auth');
+	assert.equal(credential.properties[0].name, 'secretHeaderName');
+	assert.equal(credential.properties[1].name, 'secretValue');
+});
+
 test('node description exposes expected operations', () => {
 	const node = new WaswuzPlatform();
 	const operationProperty = node.description.properties.find(
@@ -259,6 +280,19 @@ test('webhook description exposes POST webhook endpoint', () => {
 	assert.equal(node.description.webhooks[0].httpMethod, 'POST');
 	assert.equal(node.description.webhooks[0].responseMode, 'onReceived');
 	assert.equal(node.description.webhooks[0].path, '={{$parameter["path"]}}');
+});
+
+test('openclaw webhook description exposes POST webhook endpoint', () => {
+	const node = new OpenClawWebhook();
+
+	assert.equal(node.description.group[0], 'trigger');
+	assert.equal(node.description.webhooks[0].httpMethod, 'POST');
+	assert.equal(node.description.webhooks[0].responseMode, 'onReceived');
+	assert.equal(node.description.webhooks[0].path, '={{$parameter["path"]}}');
+	assert.equal(
+		node.description.webhooks[0].responseContentType,
+		'={{$parameter["responseContentType"]}}'
+	);
 });
 
 test('loadOptions:getWhatsAppPhoneNumbers formats auto-detect and primary entries', async () => {
@@ -806,4 +840,95 @@ test('webhook rejects requests with an invalid hmac signature', async () => {
 	});
 
 	await assert.rejects(() => node.webhook.call(context), /Webhook signature validation failed/);
+});
+
+test('openclaw webhook returns an immediate acknowledgement and workflow payload', async () => {
+	const node = new OpenClawWebhook();
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'none',
+			responseContentType: 'text/plain',
+			responseBody: 'accepted',
+		},
+		body: { event: 'conversation.created', id: 'evt_openclaw_1' },
+		headers: { 'content-type': 'application/json' },
+		query: { source: 'openclaw' },
+		params: { workspace: 'demo' },
+		request: {
+			method: 'POST',
+			originalUrl: '/webhook/openclaw?source=openclaw',
+		},
+	});
+
+	const result = await node.webhook.call(context);
+
+	assert.equal(result.webhookResponse, 'accepted');
+	assert.equal(result.workflowData[0][0].json.body.id, 'evt_openclaw_1');
+	assert.equal(result.workflowData[0][0].json.headers['content-type'], 'application/json');
+	assert.equal(result.workflowData[0][0].json.query.source, 'openclaw');
+	assert.equal(result.workflowData[0][0].json.params.workspace, 'demo');
+	assert.equal(result.workflowData[0][0].json.acknowledgement.contentType, 'text/plain');
+	assert.equal(result.workflowData[0][0].json.acknowledgement.body, 'accepted');
+});
+
+test('openclaw webhook rejects requests with an invalid shared secret', async () => {
+	const node = new OpenClawWebhook();
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'headerSecret',
+			responseContentType: 'text/plain',
+			responseBody: 'ok',
+		},
+		headers: {
+			'x-openclaw-secret': 'invalid',
+		},
+	});
+
+	await assert.rejects(() => node.webhook.call(context), /Webhook secret validation failed/);
+});
+
+test('openclaw webhook validates requests with the configured credential secret', async () => {
+	const node = new OpenClawWebhook();
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'headerSecret',
+			responseContentType: 'text/plain',
+			responseBody: 'ok',
+		},
+		headers: {
+			'x-openclaw-secret': 'expected',
+		},
+		options: {
+			openClawCredentials: {
+				secretHeaderName: 'x-openclaw-secret',
+				secretValue: 'expected',
+			},
+		},
+	});
+
+	const result = await node.webhook.call(context);
+
+	assert.equal(result.webhookResponse, 'ok');
+	assert.equal(result.workflowData[0][0].json.headers['x-openclaw-secret'], 'expected');
+});
+
+test('openclaw webhook can return a JSON acknowledgement payload', async () => {
+	const node = new OpenClawWebhook();
+	const context = createWebhookContext({
+		parameters: {
+			authentication: 'none',
+			responseContentType: 'application/json',
+			responseJson: { success: true, accepted: true },
+		},
+		body: { event: 'message.created' },
+	});
+
+	const result = await node.webhook.call(context);
+
+	assert.deepEqual(result.webhookResponse, { success: true, accepted: true });
+	assert.equal(result.workflowData[0][0].json.acknowledgement.contentType, 'application/json');
+	assert.deepEqual(result.workflowData[0][0].json.acknowledgement.body, {
+		success: true,
+		accepted: true,
+	});
 });
