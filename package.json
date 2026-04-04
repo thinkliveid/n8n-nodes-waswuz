@@ -27,7 +27,7 @@
   "main": "dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js",
   "scripts": {
     "build": "tsc && npm run copy-icons",
-    "copy-icons": "node -e \"const fs=require('fs'); fs.cpSync('nodes/WaswuzPlatform/icon.svg', 'dist/nodes/WaswuzPlatform/icon.svg'); fs.cpSync('nodes/WaswuzWebhook/icon.svg', 'dist/nodes/WaswuzWebhook/icon.svg');\"",
+    "copy-icons": "node -e \"const fs=require('fs'); fs.cpSync('nodes/WaswuzPlatform/icon.svg', 'dist/nodes/WaswuzPlatform/icon.svg', {force:true}); fs.cpSync('nodes/WaswuzWebhook/icon.svg', 'dist/nodes/WaswuzWebhook/icon.svg', {force:true}); fs.cpSync('nodes/OpenClawWebhook/icon.svg', 'dist/nodes/OpenClawWebhook/icon.svg', {force:true});\"",
     "dev": "tsc --watch",
     "format": "prettier nodes credentials config --write",
     "lint": "eslint nodes credentials config package.json",
@@ -40,11 +40,13 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/WaswuzPlatformApi.credentials.js"
+      "dist/credentials/WaswuzPlatformApi.credentials.js",
+      "dist/credentials/OpenClawWebhookAuth.credentials.js"
     ],
     "nodes": [
       "dist/nodes/WaswuzPlatform/WaswuzPlatform.node.js",
-      "dist/nodes/WaswuzWebhook/WaswuzWebhook.node.js"
+      "dist/nodes/WaswuzWebhook/WaswuzWebhook.node.js",
+      "dist/nodes/OpenClawWebhook/OpenClawWebhook.node.js"
     ]
   },
   "devDependencies": {

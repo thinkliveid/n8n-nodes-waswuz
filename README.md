@@ -9,6 +9,7 @@ n8n community node untuk mengirim pesan WhatsApp, Instagram DM, dan Facebook Mes
 - **Get Template** - Ambil detail template by ID
 - **Mark as Read** - Tandai pesan sebagai sudah dibaca
 - **Send Typing Indicator** - Tampilkan indikator mengetik
+- **OpenClaw Webhook** - Terima trigger dari OpenClaw, kirim acknowledgement cepat, lalu teruskan payload ke workflow berikutnya
 
 ## Installation
 
@@ -31,6 +32,8 @@ npm install nama-package
 2. Buka **Settings > Developers > API Keys**
 3. Buat API Key baru
 4. Di n8n, buat credentials baru dan paste API key
+
+Untuk `OpenClaw Webhook`, buat credential `OpenClaw Webhook Auth` jika ingin memvalidasi shared secret dari header request OpenClaw.
 
 ## Operations
 
