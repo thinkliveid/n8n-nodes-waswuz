@@ -83,7 +83,7 @@ function signaturesMatch(expected: string, incoming: string): boolean {
 	return timingSafeEqual(expectedBuffer, incomingBuffer);
 }
 
-function normalizeSignature(incoming: string, signaturePrefix: string): string {
+function normalizeSignature(incoming: string): string {
 	let trimmed = incoming.trim();
 
 	if (
@@ -439,7 +439,7 @@ export class WaswuzWebhook implements INodeType {
 			const digest = createHmac('sha256', webhookKey).update(rawBody).digest();
 			const expectedHex = digest.toString('hex');
 			const incomingSignature = incomingSignatureRaw.trim();
-			const normalizedIncoming = normalizeSignature(incomingSignature, '');
+			const normalizedIncoming = normalizeSignature(incomingSignature);
 			const matchesHex = signaturesMatchHex(expectedHex, normalizedIncoming);
 
 			if (!matchesHex) {
