@@ -56,6 +56,22 @@ function getRawRequestBody(request: { rawBody?: unknown; body?: unknown }, body:
 	return Buffer.from(JSON.stringify(body ?? {}), 'utf8');
 }
 
+function getRawRequestBodyIfAvailable(
+	request: { rawBody?: unknown; body?: unknown },
+	body: IDataObject,
+): Buffer | undefined {
+	if (
+		Buffer.isBuffer(request.rawBody) ||
+		typeof request.rawBody === 'string' ||
+		Buffer.isBuffer(request.body) ||
+		typeof request.body === 'string'
+	) {
+		return getRawRequestBody(request, body);
+	}
+
+	return undefined;
+}
+
 function signaturesMatch(expected: string, incoming: string): boolean {
 	const expectedBuffer = Buffer.from(expected, 'utf8');
 	const incomingBuffer = Buffer.from(incoming, 'utf8');
@@ -65,6 +81,32 @@ function signaturesMatch(expected: string, incoming: string): boolean {
 	}
 
 	return timingSafeEqual(expectedBuffer, incomingBuffer);
+}
+
+function normalizeSignature(incoming: string, signaturePrefix: string): string {
+	let trimmed = incoming.trim();
+
+	if (
+		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+		(trimmed.startsWith("'") && trimmed.endsWith("'"))
+	) {
+		trimmed = trimmed.slice(1, -1).trim();
+	}
+
+	return trimmed;
+}
+
+function isHexString(value: string): boolean {
+	return value.length > 0 && /^[0-9a-f]+$/i.test(value);
+}
+
+function signaturesMatchHex(expectedHex: string, incoming: string): boolean {
+	const normalized = incoming.trim().toLowerCase();
+	if (!isHexString(normalized)) {
+		return false;
+	}
+
+	return signaturesMatch(expectedHex, normalized);
 }
 
 function getValueByPath(data: unknown, path: string): unknown {
@@ -221,18 +263,6 @@ export class WaswuzWebhook implements INodeType {
 				description: 'The request header that carries the HMAC signature',
 			},
 			{
-				displayName: 'Signature Prefix',
-				name: 'signaturePrefix',
-				type: 'string',
-				default: 'sha256=',
-				displayOptions: {
-					show: {
-						authentication: ['hmacSignature'],
-					},
-				},
-				description: 'Optional prefix expected before the hex digest in the signature header',
-			},
-			{
 				displayName: 'Auto Send Typing',
 				name: 'autoSendTyping',
 				type: 'boolean',
@@ -379,8 +409,7 @@ export class WaswuzWebhook implements INodeType {
 			const signatureHeaderName = (
 				this.getNodeParameter('signatureHeaderName') as string
 			).toLowerCase();
-			const signaturePrefix = this.getNodeParameter('signaturePrefix') as string;
-			const incomingSignature = normalizeHeaderValue(headers[signatureHeaderName]);
+			const incomingSignatureRaw = normalizeHeaderValue(headers[signatureHeaderName]);
 			const credentials = await this.getCredentials(brandConfig.credentialId);
 			const webhookKey = credentials.webhookKey as string | undefined;
 
@@ -390,17 +419,30 @@ export class WaswuzWebhook implements INodeType {
 				});
 			}
 
-			if (!incomingSignature) {
+			if (!incomingSignatureRaw) {
 				throw new NodeOperationError(this.getNode(), 'Webhook signature validation failed', {
 					description: `The "${signatureHeaderName}" header is missing.`,
 				});
 			}
 
-			const rawBody = getRawRequestBody(request, body);
-			const expectedDigest = createHmac('sha256', webhookKey).update(rawBody).digest('hex');
-			const expectedSignature = `${signaturePrefix}${expectedDigest}`;
+			const rawBody = getRawRequestBodyIfAvailable(request, body);
+			if (!rawBody) {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Raw webhook body is not available for signature validation',
+					{
+						description:
+							'The webhook signature requires the raw request body. Ensure the sender posts application/json and the webhook is configured to capture rawBody.',
+					},
+				);
+			}
+			const digest = createHmac('sha256', webhookKey).update(rawBody).digest();
+			const expectedHex = digest.toString('hex');
+			const incomingSignature = incomingSignatureRaw.trim();
+			const normalizedIncoming = normalizeSignature(incomingSignature, '');
+			const matchesHex = signaturesMatchHex(expectedHex, normalizedIncoming);
 
-			if (!signaturesMatch(expectedSignature, incomingSignature)) {
+			if (!matchesHex) {
 				throw new NodeOperationError(this.getNode(), 'Webhook signature validation failed', {
 					description: `The "${signatureHeaderName}" header did not match the computed HMAC-SHA256 signature.`,
 				});
